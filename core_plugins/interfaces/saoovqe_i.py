@@ -2,10 +2,10 @@ import numpy as np
 
 from saoovqe import SAOOVQE
 from pysurf.spp.qm import AbinitioBase
-from jinja2 import Template #build templates
+from jinja2 import Template  # build templates
 from pysurf.system import Molecule
 
-#geometry in units bohr
+# geometry in units bohr
 tpl = Template("""
 units    bohr
 {{chg}} {{mult}} {% for atomid, crd in mol %} 
@@ -14,6 +14,7 @@ symmetry c1
 nocom
 noreorient 
 """)
+
 
 def ovlp_half(overlap):
     """Convert overlap matrix to S^1/2"""
@@ -29,6 +30,7 @@ def ovlp_min_half(overlap):
     S_eigval, S_eigvec = np.linalg.eigh(overlap)
     S_half = S_eigvec @ np.diag((S_eigval) ** (-1.0 / 2.0)) @ S_eigvec.T
     return S_half
+
 
 class INTSAOOVQE(AbinitioBase):
     """ Interface for the SAOOVQE code, which is free available 
@@ -56,36 +58,31 @@ class INTSAOOVQE(AbinitioBase):
     [noise(True)]
     mean = 0 :: float
     variance = 1.0e-20 :: float 
-    noise_energy_after_sa_vqe = True :: bool :: True, False
     noise_before_orb_opt_phase = True :: bool :: True, False
-    noise_final_state_resolution = True :: bool :: True, False
     # Not yet implemented noise in vqe_cost_function
     noise_vqe_cost_function_energy = False :: bool
-    noise_rdms_gradient = True :: bool :: True, False
-    noise_tdms_nacs = True :: bool :: True, False
+    noise_rdms = True :: bool :: True, False
+    noise_tdms = True :: bool :: True, False
     [noise(False)]
     add_noise = False :: str
     """
-    
+
     tpl = tpl
 
     noise_settings = {
-        'mean' : 0,
-        'variance' : 1.0e-20, 
-        'noise_energy_after_sa_vqe' : True,
-        'noise_before_orb_opt_phase' : True,
-        'noise_final_state_resolution' : True,
+        'mean': 0,
+        'variance': 1.0e-20,
+        'noise_before_orb_opt_phase': True,
         'noise_vqe_cost_function_energy': False,
-        'noise_rdms_gradient': True,
-        'noise_tdms_nacs': True,
+        'noise_rdms': True,
+        'noise_tdms': True,
     }
 
     # implemented has to be overwritten by the individual classes for the methods
     implemented = ['energy', 'gradient', 'nacs']
 
-
     def __init__(self, config, atomids, nstates, basis, chg, mult, nelec_active, frozen_indices, active_indices, virtual_indices, do_oo_process, noise):
-        self.molecule = Molecule(atomids, None) 
+        self.molecule = Molecule(atomids, None)
         self.natoms = len(atomids)
         self.nstates = nstates
         self.basis = basis
@@ -93,7 +90,7 @@ class INTSAOOVQE(AbinitioBase):
         self.mult = mult
         self.nelec_active = nelec_active
         self.frozen_indices = [i for i in range(frozen_indices)]
-        self.active_indices = [i for i in range(active_indices[0], active_indices[1])] 
+        self.active_indices = [i for i in range(active_indices[0], active_indices[1])]
         self.virtual_indices = [i for i in range(virtual_indices[0], virtual_indices[1])]
         self.num_qubits = 2 * len(active_indices)
         self.do_oo_process = do_oo_process
@@ -105,18 +102,17 @@ class INTSAOOVQE(AbinitioBase):
         self.delta = 1e-5
         self.tell_me = True
         self.ucc_ansatz = ["fermionic_SAAD", "fast"][1]
-        self.bohr = 0.5291772105638411 
+        self.bohr = 0.5291772105638411
         self.initial_param_values = None
         self.icall = 0
-        
+
     def _update_settings(self, config):
         self.noise_settings.update({key: value for key, value in config['noise'].items()})
-    
+
     @classmethod
     def from_config(cls, config, atomids, nstates, nghost_states):
         return cls(config, atomids, nstates, config['basis'], config['chg'], config['mult'], config['nelec_active'], config['frozen_indices'], config['active_indices'], config['virtual_indices'], config['do_oo_process'], config['noise'])
 
-    
     def get(self, request):
         if self.icall == 0:
             self.read_mos = False
@@ -127,59 +123,51 @@ class INTSAOOVQE(AbinitioBase):
         self.molecule.crd = request.crd
         if 'gradient' in request:
             self._out_gradient(request)
-        if 'energy'  in request:
+        if 'energy' in request:
             self._out_energy(request)
-        if 'nacs'  in request:
+        if 'nacs' in request:
             self._out_nacs(request)
         return request
 
     def _do_saoovqe_ene_grad_nacs(self, state):
         string_geo = self.tpl.render(chg=self.chg, mult=self.mult,
-                     mol=self.molecule)
+                                     mol=self.molecule)
         if self.noise == "True":
             noise = True
             noise_mean = self.noise_settings['mean']
-            noise_sd = np.sqrt(self.noise_settings['variance']) 
-            noise_energy_after_sa_vqe = self.noise_settings['noise_energy_after_sa_vqe']
+            noise_sd = np.sqrt(self.noise_settings['variance'])
             noise_before_orb_opt_phase = self.noise_settings['noise_before_orb_opt_phase']
-            noise_final_state_resolution = self.noise_settings['noise_final_state_resolution']
-            noise_vqe_cost_function_energy = self.noise_settings['noise_vqe_cost_function_energy']
-            noise_rdms_gradient = self.noise_settings['noise_rdms_gradient'] 
-            noise_tdms_nacs = self.noise_settings['noise_tdms_nacs']
+            noise_rdms = self.noise_settings['noise_rdms']
+            noise_tdms = self.noise_settings['noise_tdms']
         else:
             noise = False
-            noise_mean=None
-            noise_sd=None
-            noise_energy_after_sa_vqe=False
-            noise_before_orb_opt_phase=False
-            noise_final_state_resolution=False
-            noise_vqe_cost_function_energy=False
-            noise_rdms_gradient=False
-            noise_tdms_nacs=False
+            noise_mean = None
+            noise_sd = None
+            noise_before_orb_opt_phase = False
+            noise_rdms = False
+            noise_tdms = False
 
         saoovqe_class = SAOOVQE(string_geo,
-                          self.basis,
-                          self.nelec_active,
-                          self.frozen_indices,
-                          self.active_indices,
-                          self.virtual_indices,
-                          tell_me=self.tell_me,
-                          w_a=self.w_a,
-                          w_b=self.w_b,
-                          delta=self.delta,
-                          print_timings=False, # Use this if you want to compute all the timings...
-                          do_oo_process=self.do_oo_process,
-                          add_noise=noise,
-                          noise_mean=noise_mean,
-                          noise_sd=noise_sd,
-                          noise_energy_after_sa_vqe=noise_energy_after_sa_vqe,
-                          noise_before_orb_opt_phase=noise_before_orb_opt_phase,
-                          noise_final_state_resolution=noise_final_state_resolution,
-                          noise_vqe_cost_function_energy=noise_vqe_cost_function_energy,
-                          noise_rdms_gradient=noise_rdms_gradient,
-                          noise_tdms_nacs=noise_tdms_nacs,
-                          ucc_ansatz=self.ucc_ansatz,
-                          initial_param_values=self.initial_param_values)
+                                self.basis,
+                                self.nelec_active,
+                                self.frozen_indices,
+                                self.active_indices,
+                                self.virtual_indices,
+                                tell_me=self.tell_me,
+                                w_a=self.w_a,
+                                w_b=self.w_b,
+                                delta=self.delta,
+                                # Use this if you want to compute all the timings...
+                                print_timings=False,
+                                do_oo_process=self.do_oo_process,
+                                add_noise=noise,
+                                noise_mean=noise_mean,
+                                noise_sd=noise_sd,
+                                noise_before_orb_opt_phase=noise_before_orb_opt_phase,
+                                noise_rdms=noise_rdms,
+                                noise_tdms=noise_tdms,
+                                ucc_ansatz=self.ucc_ansatz,
+                                initial_param_values=self.initial_param_values)
         """Read molecular orbitals and VQE kernel parameter values after the first timestep"""
         if self.read_mos:
             old_mo = np.loadtxt("mos_save")
@@ -201,23 +189,23 @@ class INTSAOOVQE(AbinitioBase):
         grad = []
         nac = []
         for i in range(self.natoms):
-            dx,dy,dz = saoovqe_class.get_gradient(i,state)
-            nx,ny,nz = saoovqe_class.get_nac(i)
-            grad.append([dx*self.bohr,dy*self.bohr,dz*self.bohr])
-            nac.append([-nx*self.bohr,-ny*self.bohr,-nz*self.bohr])
+            dx, dy, dz = saoovqe_class.get_gradient(i, state)
+            nx, ny, nz = saoovqe_class.get_nac(i)
+            grad.append([dx*self.bohr, dy*self.bohr, dz*self.bohr])
+            nac.append([-nx*self.bohr, -ny*self.bohr, -nz*self.bohr])
         self.grads = grad
         self.nacs = nac
 
-    def _read_grads(self,state):
-        self._do_saoovqe_ene_grad_nacs(state)        
+    def _read_grads(self, state):
+        self._do_saoovqe_ene_grad_nacs(state)
         return np.array(self.grads)
 
     def _read_nacs(self):
         nacs = {}
         leng = int(self.nstates*(self.nstates-1)/2)
         if self.nstates == 2:
-            nacs.update({(0,1):np.array(self.nacs)})
-            nacs.update({(1,0):-np.array(self.nacs)})
+            nacs.update({(0, 1): np.array(self.nacs)})
+            nacs.update({(1, 0): -np.array(self.nacs)})
         else:
             raise SystemExit("The number of states is different than 2")
         return nacs
@@ -237,10 +225,10 @@ class INTSAOOVQE(AbinitioBase):
         request.set('nacs', out_nacs)
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     from pysurf.database import PySurfDB
     from pysurf.spp import SurfacePointProvider
-    from numpy import copy 
+    from numpy import copy
 
     db_file = "sampling.db"
     db = PySurfDB.load_database(db_file, read_only=True)
@@ -250,8 +238,9 @@ if __name__=='__main__':
     nstates = 2
     state = 1
 
-    spp = SurfacePointProvider.from_questions(['energy', 'gradient', 'nacs'], nstates, natoms, atomids=atomids, config='spp.inp')
-    res = spp.request(crd, ['energy','gradient','nacs'], states=[state])
-    print("ENE:",res['energy'])
-    print("NACS:",res['nacs'])
-    print("GRAD:",res['gradient'][1])
+    spp = SurfacePointProvider.from_questions(
+        ['energy', 'gradient', 'nacs'], nstates, natoms, atomids=atomids, config='spp.inp')
+    res = spp.request(crd, ['energy', 'gradient', 'nacs'], states=[state])
+    print("ENE:", res['energy'])
+    print("NACS:", res['nacs'])
+    print("GRAD:", res['gradient'][1])
